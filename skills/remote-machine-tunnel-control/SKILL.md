@@ -35,11 +35,11 @@ description: 通过 SSH 反向隧道从云端远程控制 NAT 后的本地机器
 
 - 两端**全部只绑回环**，云端**不开放任何对外端口**
 - 隧道由本地发起 → 本地可以没有任何入站能力
-- 想看 Web UI：在自己电脑上 `ssh -N -L 9020:127.0.0.1:9020 root@<云端>` 再浏览器开 `127.0.0.1:9020`
+- 想看 Web UI：在自己电脑上 `ssh -N -L 9020:127.0.0.1:9020 root@«云主机»` 再浏览器开 `127.0.0.1:9020`
 
-### 本机实例快照（DESKTOP-CKQ4CLB）
+### 本机实例快照（MACHINE-A）
 
-- 项目根：`C:\Users\igorwood\Desktop\Projects\JDBJJ`，脚本在 `scripts\`，日志 `logs\`，状态 `run\`
+- 项目根：`C:\path\to\project`，脚本在 `scripts\`，日志 `logs\`，状态 `run\`
 - 令牌文件（**内容一律不回显**）：`scripts\.sshpass`（SSH 密码）、`scripts\.agent_token`（通道 A）、`scripts\.reasonix_token`（通道 B）
 - 云端凭据：`/root/jdbjj/env.sh` 提供 `JDBJJ_REMOTE` / `JDBJJ_TOKEN`
 - 组件启动链：`supervisor.py` → `watchdog.py` →（`watchdog_transcribe.py` + `watchdog_tunnel.py`）
@@ -101,7 +101,7 @@ print(reasonix(task, timeout=240)["output"]["output"])
 
 | 机器 | 隧道端口（控制面/serve） | 守卫端口段 | 令牌文件 |
 |---|---|---|---|
-| `DESKTOP-CKQ4CLB` | 9000 / 9020 | 19100–19110 | `scripts/.agent_token`（本地） |
+| `MACHINE-A` | 9000 / 9020 | 19100–19110 | `scripts/.agent_token`（本地） |
 | `MACHINE-B` | 9100 / 9120 | 19200–19210 | 同上（各自独立） |
 | `MACHINE-C` | 9200 / 9220 | 19300–19310 | 同上 |
 
@@ -119,7 +119,7 @@ print(reasonix(task, timeout=240)["output"]["output"])
       "control_port": 9000, "serve_port": 9020,
       "env": "/root/jdbjj/env.sh", "token_key": "JDBJJ_TOKEN",
       "guard_base": 19100,
-      "project": "C:\\Users\\igorwood\\Desktop\\Projects\\JDBJJ"
+      "project": "C:\\path\\to\\project"
     }
   }
 }

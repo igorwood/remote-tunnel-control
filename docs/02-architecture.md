@@ -1,6 +1,6 @@
 # 云端 ↔ 多台本地机器 · 反向隧道控制架构
 
-> 版本：2026-10-12 ｜ 首个落地实例：`DESKTOP-CKQ4CLB`（Windows，JDBJJ 转录流水线）
+> 版本：2026-10-12 ｜ 首个落地实例：`MACHINE-A`（Windows，JDBJJ 转录流水线）
 > 配套 skill：`remote-machine-tunnel-control`（故障处置与防崩溃细节以 skill 为准）
 
 ---
@@ -48,7 +48,7 @@
 需要复杂操作时才用 `reasonix` 动作把**自然语言任务**交给本地 agent 执行 —— 这是权限升级，
 每次调用都会写本地 `logs/agent-audit.log`。
 
-**通道 B 的用途**：复杂交互（多轮、看 UI）时，在自己电脑上 `ssh -N -L 9020:127.0.0.1:9020 root@<云端>`
+**通道 B 的用途**：复杂交互（多轮、看 UI）时，在自己电脑上 `ssh -N -L 9020:127.0.0.1:9020 root@«云主机»`
 把 serve 拉到自己浏览器。
 
 ---
@@ -57,7 +57,7 @@
 
 | 机器 | 隧道端口（控制面 / agent） | 守卫端口段（单实例锁） | 令牌文件（本地） |
 |---|---|---|---|
-| `DESKTOP-CKQ4CLB` | 9000 / 9020 | 19100 – 19110 | `scripts/.agent_token`、`.sshpass`、`.reasonix_token` |
+| `MACHINE-A` | 9000 / 9020 | 19100 – 19110 | `scripts/.agent_token`、`.sshpass`、`.reasonix_token` |
 | `MACHINE-B` | 9100 / 9120 | 19200 – 19210 | 同上（**独立令牌**） |
 | `MACHINE-C` | 9200 / 9220 | 19300 – 19310 | 同上（**独立令牌**） |
 
@@ -238,7 +238,7 @@ python3 rmt.py jdbjj start|stop|package  # 幂等动作
 3. **每机独立令牌**，云端按机分目录存放，权限 `600`
 4. `reasonix` 动作**全量审计**（`logs/agent-audit.log` 记录任务与结果摘要）
 5. 组转发的端口**永远只绑 `127.0.0.1`**（改 `0.0.0.0` = 把 agent 控制面暴露公网）
-6. 失败登录监控（曾有 `120.48.45.34`、`115.190.234.63` 暴力破解尝试）
+6. 失败登录监控（曾有 `x.x.x.x`、`y.y.y.y` 暴力破解尝试）
 
 ---
 
@@ -246,8 +246,8 @@ python3 rmt.py jdbjj start|stop|package  # 幂等动作
 
 | 项 | 值 |
 |---|---|
-| 本机主机名 | `DESKTOP-CKQ4CLB` |
-| 项目 | `C:\Users\igorwood\Desktop\Projects\JDBJJ` |
+| 本机主机名 | `MACHINE-A` |
+| 项目 | `C:\path\to\project` |
 | 任务 | 262 个音频分片 → 转录（large-v3 / faster-whisper） |
 | 进度 | **240 / 262（91.6%）**，30 部教学片，剩余 ≈ 9 小时 |
 | 算力 | GPU 98% / 温度 51–52°C / 磁盘 240.5GB |

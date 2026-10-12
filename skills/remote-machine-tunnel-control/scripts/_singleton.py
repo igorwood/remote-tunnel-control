@@ -12,7 +12,7 @@
         pass
 
 约定：端口按机器编号分段（见 references/architecture.md §4）
-      DESKTOP-CKQ4CLB = 19100+，MACHINE-B = 19200+，MACHINE-C = 19300+
+      MACHINE-A = 19100+，MACHINE-B = 19200+，MACHINE-C = 19300+
 """
 import socket
 import sys
