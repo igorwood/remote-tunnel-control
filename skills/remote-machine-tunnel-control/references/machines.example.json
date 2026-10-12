@@ -1,0 +1,15 @@
+{
+  "_comment": "云端多机注册表：每台本地机器一行。token_key 指向 env 文件里的令牌变量名；内容不回显。",
+  "machines": {
+    "jdbjj": {
+      "desc": "Windows 台式机 DESKTOP-CKQ4CLB · JDBJJ 转录流水线",
+      "control_port": 9000,
+      "serve_port": 9020,
+      "env": "/root/jdbjj/env.sh",
+      "token_key": "JDBJJ_TOKEN",
+      "guard_base": 19100,
+      "project": "C:\\Users\\igorwood\\Desktop\\Projects\\JDBJJ",
+      "notes": "隧道由本地 reverse_tunnel.py 主动发起；断链看 watchdog_tunnel.py"
+    }
+  }
+}
