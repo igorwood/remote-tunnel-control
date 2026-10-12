@@ -10,10 +10,10 @@
 ```
 ┌────────────────────────── 云端（控制方） ──────────────────────────┐
 │  A 通道客户端      rmt.py / 内联 Python(urllib)                     │
-│  B 巡检器          jdbjj_progress.py  ← cron */30                   │
+│  B 巡检器          progress_monitor.py  ← cron */30                   │
 │  C 投送器          push_remote_file.py（把补丁/脚本送到远端执行）    │
 │  D 凭据与注册      env.sh（令牌）、machines.json（多机注册表）        │
-│  E 审计与日志      /root/jdbjj/*.py 日志、cron 输出                  │
+│  E 审计与日志      /root/machine-ctl/*.py 日志、cron 输出                  │
 │  F 隧道出口        127.0.0.1:9000（控制面）  127.0.0.1:9020（agent） │
 └───────────────────────────────┬────────────────────────────────────┘
                     SSH 反向隧道（由本地发起，仅回环）
@@ -63,12 +63,12 @@
 
 | 程序 | 职责 | 关键实现 | 调度 |
 |---|---|---|---|
-| `/root/jdbjj/env.sh` | 提供 `JDBJJ_REMOTE`、`JDBJJ_TOKEN`（**内容不回显**） | 纯 shell | — |
+| `/root/machine-ctl/env.sh` | 提供 `MACHINE_REMOTE`、`MACHINE_TOKEN`（**内容不回显**） | 纯 shell | — |
 | `rmt.py` | **多机统一 CLI**：`list / status / tail / list-transcripts / start / stop / run` | 读 `machines.json`；按机器取端口与令牌 | 人工 |
 | 内联 Python 调用范式 | 临时查询/控制（避开安全策略对中文 curl 的拦截） | `urllib` + `env.sh` 读令牌 | 人工 |
-| `jdbjj_progress.py` | **巡检**：段进度判活、断线告警、快照去重 | 读 `tail_log?which=pipeline` + `/status`；stdout 非空才推送 | cron `*/30 * * * *`（`no_agent`，`deliver=origin`） |
+| `progress_monitor.py` | **巡检**：段进度判活、断线告警、快照去重 | 读 `tail_log?which=pipeline` + `/status`；stdout 非空才推送 | cron `*/30 * * * *`（`no_agent`，`deliver=origin`） |
 | `push_remote_file.py` | **投送器**：把云端本地文件原样送到远端执行 | 文件内容嵌入 `reasonix` 任务；要求"原样保存→运行→完整回传→删除" | 人工 |
-| `_singleton.py` / `_add_guard.py` / `_patch*.py` / `_dedup*.py` / `_converge.py` / `_start_*.py` | 一次性运维脚本（守卫注入、补丁、去重、收敛、拉起） | 均在 `/root/jdbjj/`，可复用 | 人工 |
+| `_singleton.py` / `_add_guard.py` / `_patch*.py` / `_dedup*.py` / `_converge.py` / `_start_*.py` | 一次性运维脚本（守卫注入、补丁、去重、收敛、拉起） | 均在 `/root/machine-ctl/`，可复用 | 人工 |
 | `verify_*.py` / `final_verify.py` | 改动后验证（语法+关键行+进度两采样） | — | 人工 |
 | `machines.json` | 多机注册表（机器名、隧道端口、env 路径、令牌键、守卫基址） | JSON | — |
 | cron 任务 | 巡检 + 与本地任务无关的推送类任务（错峰） | — | 见 §4.6 |
@@ -90,7 +90,7 @@
 
 | 通道 | 头 | 令牌来源（本地） | 云端保存 |
 |---|---|---|---|
-| A 控制面 | `X-Token: <t>` | `scripts/.agent_token` | `env.sh` 的 `JDBJJ_TOKEN` |
+| A 控制面 | `X-Token: <t>` | `scripts/.agent_token` | `env.sh` 的 `MACHINE_TOKEN` |
 | B agent | `Authorization: Bearer <t>` | `scripts/.reasonix_token` | 单独保存（**不给不信任方**） |
 
 > 每台机器**独立令牌**，云端按机分目录：`/root/machines/<name>/env.sh`（权限 600）。
@@ -142,7 +142,7 @@ POST /reasonix
 ### 5.1 状态查询（最常用）
 
 ```
-云端 rmt.py jdbjj status
+云端 rmt.py project status
   → GET 127.0.0.1:9000/status  (X-Token)
   → 隧道 → 本地 9001 local_control_server
   → 读取 transcripts/index.json + GPU + 进程表
@@ -163,7 +163,7 @@ POST /reasonix
 ### 5.3 长任务巡检（自动）
 
 ```
-cron */30 → jdbjj_progress.py
+cron */30 → progress_monitor.py
   → GET /status（产物计数、GPU、主机）
   → GET /tail_log?which=pipeline&lines=12（段进度）
   → 判活：产物增加 OR 段进度变化 = 在干活（两者都停 90 分钟才报"可能卡住"）

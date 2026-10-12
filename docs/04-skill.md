@@ -41,7 +41,7 @@ description: 通过 SSH 反向隧道从云端远程控制 NAT 后的本地机器
 
 - 项目根：`C:\path\to\project`，脚本在 `scripts\`，日志 `logs\`，状态 `run\`
 - 令牌文件（**内容一律不回显**）：`scripts\.sshpass`（SSH 密码）、`scripts\.agent_token`（通道 A）、`scripts\.reasonix_token`（通道 B）
-- 云端凭据：`/root/jdbjj/env.sh` 提供 `JDBJJ_REMOTE` / `JDBJJ_TOKEN`
+- 云端凭据：`/root/machine-ctl/env.sh` 提供 `MACHINE_REMOTE` / `MACHINE_TOKEN`
 - 组件启动链：`supervisor.py` → `watchdog.py` →（`watchdog_transcribe.py` + `watchdog_tunnel.py`）
   ；`supervisor.py` 另管 `run_pipeline.py` → `transcribe.py`、`local_control_server.py`、`reverse_tunnel.py`、
   `agent_daemon.py`、`package_and_upload.py`
@@ -56,10 +56,10 @@ description: 通过 SSH 反向隧道从云端远程控制 NAT 后的本地机器
 ```python
 import json, re, urllib.request
 env = {}
-for line in open('/root/jdbjj/env.sh', encoding='utf-8'):
+for line in open('/root/machine-ctl/env.sh', encoding='utf-8'):
     m = re.match(r'(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)', line.strip())
     if m: env[m.group(1)] = m.group(2).strip().strip('"').strip("'")
-TOK = env.get("JDBJJ_TOKEN", "")
+TOK = env.get("MACHINE_TOKEN", "")
 BASE = "http://127.0.0.1:9000"
 
 def get(path, tmo=25):
@@ -80,7 +80,7 @@ def reasonix(task, mode="print", timeout=180, wait=300):
 不要在任务里让远端 agent 自由发挥改代码 —— 把**完整脚本**嵌进任务，让它"原样保存 → 运行 → 回传完整输出 → 删除"：
 
 ```python
-code = open('/root/jdbjj/_patch_x.py', encoding='utf-8').read()
+code = open('/root/machine-ctl/_patch_x.py', encoding='utf-8').read()
 task = ("保存下面 python 代码为 scripts/_patch_x.py (utf-8, 原样照抄, 不要改写不要加行号), "
         "运行 python scripts/_patch_x.py , 完整输出原样回传(不要总结), 最后删除该文件。\n\n"
         "===== CODE =====\n" + code + "\n===== END =====")
@@ -109,15 +109,15 @@ print(reasonix(task, timeout=240)["output"]["output"])
 
 ### 3.2 云端注册表 + 统一 CLI
 
-`/root/jdbjj/machines.json`：
+`/root/machine-ctl/machines.json`：
 
 ```json
 {
   "machines": {
-    "jdbjj": {
+    "project": {
       "desc": "Windows 台式机 · 转录流水线",
       "control_port": 9000, "serve_port": 9020,
-      "env": "/root/jdbjj/env.sh", "token_key": "JDBJJ_TOKEN",
+      "env": "/root/machine-ctl/env.sh", "token_key": "MACHINE_TOKEN",
       "guard_base": 19100,
       "project": "C:\\path\\to\\project"
     }
@@ -125,7 +125,7 @@ print(reasonix(task, timeout=240)["output"]["output"])
 }
 ```
 
-配额 `rmt.py`（见 `scripts/rmt.py`）：`python3 rmt.py jdbjj status | tail pipeline 20 | list | run "<任务>"`
+配额 `rmt.py`（见 `scripts/rmt.py`）：`python3 rmt.py project status | tail pipeline 20 | list | run "<任务>"`
 
 ### 3.3 新机器 onboarding 清单（8 步）
 
@@ -278,7 +278,7 @@ def busy(script):
 ```powershell
 Invoke-CimMethod -ClassName Win32_Process -MethodName Create `
   -Arguments @{CommandLine='C:\...\.venv\Scripts\python.exe C:\...\scripts\supervisor.py --interval 300';
-               CurrentDirectory='C:\...\JDBJJ'}
+               CurrentDirectory='C:\path\to\project'}
 ```
 返回 `ReturnValue=0` 即成功（实测进程存活 ≥50 秒，跨任务不死）。另一条路：`schtasks`。幂等靠守卫端口。
 
@@ -320,7 +320,7 @@ Windows Python 默认按 GBK 解码子进程输出，而 agent 输出 UTF-8 → 
 
 ### 4.11 云端巡检：把"活锁"变成"可观测"
 
-`jdbjj_progress.py`（挂在云端 cron，`no_agent`，**有输出才推送、无输出静默**）：
+`progress_monitor.py`（挂在云端 cron，`no_agent`，**有输出才推送、无输出静默**）：
 
 - 读**流水线日志的段进度**判活（`产物数增加 OR 段进度变化` = 在干活），
   **两者都停 90 分钟**才报"可能卡住"
@@ -379,4 +379,4 @@ Windows Python 默认按 GBK 解码子进程输出，而 agent 输出 UTF-8 → 
 - `scripts/rmt.py` —— 云端多机统一 CLI（`list/status/tail/products/start/stop/package/analyze/run`）
 - `scripts/push_remote_file.py` —— 云端"确定性投送脚本到远端并执行"的投送器
 - `scripts/liveness_watchdog.md` —— 活性判定 + 动态阈值实现要点（防"把慢当死"）
-- 云端已落地的实例文件：`/root/jdbjj/{rmt.py,push_remote_file.py,machines.json,env.sh,_singleton.py,_add_guard.py,_patch*.py,_dedup*.py,_converge.py,verify_*.py}`
+- 云端已落地的实例文件：`/root/machine-ctl/{rmt.py,push_remote_file.py,machines.json,env.sh,_singleton.py,_add_guard.py,_patch*.py,_dedup*.py,_converge.py,verify_*.py}`

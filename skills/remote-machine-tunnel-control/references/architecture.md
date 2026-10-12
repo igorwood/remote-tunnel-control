@@ -1,6 +1,6 @@
 # 云端 ↔ 多台本地机器 · 反向隧道控制架构
 
-> 版本：2026-10-12 ｜ 首个落地实例：`MACHINE-A`（Windows，JDBJJ 转录流水线）
+> 版本：2026-10-12 ｜ 示例落地实例：`MACHINE-A`（Windows）· 业务：转录流水线
 > 配套 skill：`remote-machine-tunnel-control`（故障处置与防崩溃细节以 skill 为准）
 
 ---
@@ -139,17 +139,17 @@ print(get("tail_log?which=pipeline&lines=8")["output"]["content"])
 
 ## 8. 多机注册与统一 CLI
 
-`/root/jdbjj/machines.json`（云端）：
+`/root/machine-ctl/machines.json`（云端）：
 
 ```json
 {
   "machines": {
-    "jdbjj": {
+    "project": {
       "desc": "Windows 台式机 · 转录流水线",
       "control_port": 9000,
       "serve_port": 9020,
-      "env": "/root/jdbjj/env.sh",
-      "token_key": "JDBJJ_TOKEN",
+      "env": "/root/machine-ctl/env.sh",
+      "token_key": "MACHINE_TOKEN",
       "guard_base": 19100
     }
   }
@@ -160,10 +160,10 @@ print(get("tail_log?which=pipeline&lines=8")["output"]["content"])
 
 ```bash
 python3 rmt.py list                      # 列出所有机器 + 在线状态
-python3 rmt.py jdbjj status              # 进度/GPU/进程
-python3 rmt.py jdbjj tail pipeline 20    # 日志尾部
-python3 rmt.py jdbjj run "统计产物数量并输出表格"   # 交给远端 agent
-python3 rmt.py jdbjj start|stop|package  # 幂等动作
+python3 rmt.py project status              # 进度/GPU/进程
+python3 rmt.py project tail pipeline 20    # 日志尾部
+python3 rmt.py project run "统计产物数量并输出表格"   # 交给远端 agent
+python3 rmt.py project start|stop|package  # 幂等动作
 ```
 
 ---
@@ -176,7 +176,7 @@ python3 rmt.py jdbjj start|stop|package  # 幂等动作
    `supervisor.py`、`watchdog.py`、`watchdog_transcribe.py`、`watchdog_tunnel.py`、`_singleton.py`
 4. 给所有长驻脚本注入**单实例守卫**（端口按 §4 表格顺延，见 skill §4.4）
 5. 用 **CIM 方式**启动 `supervisor.py`（否则被会话回收，见 skill §4.6）
-6. 云端写 `/root/machines/<name>/env.sh`（令牌、`JDBJJ_REMOTE`），登记 `machines.json`
+6. 云端写 `/root/machines/<name>/env.sh`（令牌、`MACHINE_REMOTE`），登记 `machines.json`
 7. 校验：`python3 rmt.py <name> status` 返回该机主机名与进度
 8. 挂云端巡检 cron（见 §11），`deliver=origin`，静默模式
 
@@ -202,7 +202,7 @@ python3 rmt.py jdbjj start|stop|package  # 幂等动作
 云端 cron（`no_agent`，有输出才推送）：
 
 ```
-*/30 * * * *  jdbjj_progress.py      # 转录巡检：段进度判活、断线首发即报 + 每 2h 重申
+*/30 * * * *  progress_monitor.py      # 任务巡检（示例：转录）：段进度判活、断线首发即报 + 每 2h 重申
 ```
 
 - **判活**：产物数增加 **或** 流水线段进度变化 → 在干活
@@ -259,7 +259,7 @@ python3 rmt.py jdbjj start|stop|package  # 幂等动作
 ## 15. 演进路线
 
 1. **多机看板**：`rmt.py list` 聚合所有机器状态，云端一个页面（或每日推送）看全部
-2. **统一巡检器**：把 `jdbjj_progress.py` 泛化为读 `machines.json` 的多机巡检
+2. **统一巡检器**：把 `progress_monitor.py` 泛化为读 `machines.json` 的多机巡检
 3. **下发式运维**：把补丁脚本收进云端 `patches/`，按机器名批量投送 + 自动验证
 4. **凭据**：密钥认证 + 非 root + 每机令牌轮换
 5. **任务编排**：队列化（`queue/` + `done/`）驱动的跨机任务分发

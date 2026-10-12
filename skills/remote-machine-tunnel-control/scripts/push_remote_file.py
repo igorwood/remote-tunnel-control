@@ -13,7 +13,7 @@
     python3 push_remote_file.py <机器> <本地文件> [远端相对路径] [--no-run] [--timeout 240]
 
 例：
-    python3 push_remote_file.py jdbjj /root/jdbjj/_patch2.py scripts/_patch2.py
+    python3 push_remote_file.py machine-a ./_patch2.py scripts/_patch2.py
 
 注意：
   * 任务里**必须**写明"原样照抄、完整回传、不要总结"，否则远端 agent 会自己改写/精简
@@ -25,7 +25,7 @@ import os
 import sys
 import urllib.request
 
-REG = "/root/jdbjj/machines.json"
+REG = "/root/machine-ctl/machines.json"
 
 
 def load_env(path):

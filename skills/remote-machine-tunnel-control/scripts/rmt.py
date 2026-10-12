@@ -22,7 +22,7 @@ import sys
 import urllib.error
 import urllib.request
 
-REG = "/root/jdbjj/machines.json"
+REG = "/root/machine-ctl/machines.json"
 
 
 def load_reg():
