@@ -1,138 +1,104 @@
-# Remote Tunnel Control · 云端反向隧道远程控制套件
+# remote-tunnel-control
 
-> 让**云端机器**远程查看并控制位于 NAT 后（无公网 IP）的**多台本地机器**，
-> 并保证跑几小时到几天的长任务 **跑得住、不误杀、不重复**。
+> 把 **NAT / 内网 / 沙箱** 后面的多台机器接进云端的**反向隧道控制面**：
+> **一次性凭证注册** · **运行时无关适配** · **能力自动探测与画像** · **会话与文件台账** · 完整防崩溃方案集。
+> 不依赖端口映射、不暴露公网端口、隧道端口只绑回环。
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-lightgrey.svg)]()
-[![Guides](https://img.shields.io/badge/Docs-4%20guides-informational.svg)](docs/)
-[![Skill](https://img.shields.io/badge/Hermes-Agent-Skill-purple.svg)](skills/)
+![License](https://img.shields.io/badge/License-MIT-green) ![Python](https://img.shields.io/badge/Python-3.9%2B-blue) ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-lightgrey) ![Docs](https://img.shields.io/badge/Docs-7%20docs-blue)
 
----
+## 它解决什么
 
-## 这是什么
-
-一套**经过实战验证**的"云端 → 多台本地机器"远程控制方案，包含：
-
-- **架构与协议**：一条 SSH 反向隧道 + 两个 HTTP 接触面（白名单控制面 / agent 任意任务面）
-- **可复用代码**：单实例守卫、多机统一 CLI、确定性投送器
-- **可靠性方法论**：长任务"活性判定 + 动态阈值 + 进程去重"的完整做法（本仓库的精华）
-
-它不绑定具体业务：**转录、爬取、渲染、批处理、模型训练、跨机数据同步**……任何
-"跑很久、在 NAT 后、需要远程看进度"的任务都适用。
-
-## 为什么需要它
-
-| 痛点 | 本方案的做法 |
+| 常见痛点 | 本方案的解法 |
 |---|---|
-| 本地机器在 NAT 后，云端**无法主动连接** | 由本地主动建 **SSH 反向隧道**，两端只绑回环，云端零对外开放端口 |
-| 长任务跑几小时，"**看不见进度**" | 生产循环里写**秒级进度心跳**（原子写），控制面随时读 |
-| 通用看门狗按"**有没有新产物**"判活 → 长任务被反复误杀 | 判活改看**秒级心跳**，阈值**随任务单元时长动态放大**（`max(40, 时长×1.5+10)` 分钟） |
-| 守护进程**重复繁殖**，互相踩 | **端口式单实例守卫**（自愈、无陈锁）+ 双条件去重判定 |
-| 从远程会话起的常驻进程**随会话消失** | 用 **WMI/CIM**（或计划任务）拉起，脱离会话作业对象 |
-| 重启后**隧道断了没人管** | 专用隧道看门狗自动重建；云端巡检区分"**卡住**"与"**断线**" |
+| 目标机器在 NAT/内网/沙箱里，云端连不进去 | 目标机**主动**建反向隧道到云端，只绑 `127.0.0.1` |
+| 手工登记 + 交换密钥，容易泄漏 | **凭证制注册**：云端签发一次性凭证 → 目标机持凭证兑换令牌（**不经过 SSH 传凭据**） |
+| 每台机器的 agent 都不一样（Kimi / GLM / Claude / OpenAI / 自研 CLI） | **运行时适配层**：统一契约 + 适配器（cli_arg / cli_stdin / cli_template / openai_http / http_json） |
+| 不知道远端 agent 支不支持某种调用 | **能力探测**：自动发现动作名、工具能力、延迟基准 → 写入**每机画像**，派活按画像走 |
+| 只想知道"谁干了什么、传了什么文件" | **SQLite 台账**：`agents / sessions / messages / files / runtime_profiles / events` |
 
-## 架构：只有三个接触面
+## 结构
 
 ```
-┌──────────────── 云端（控制方）─────────────────┐
-│ 控制面客户端 · 巡检器 · 投送器 · 多机注册表      │
-│ 隧道出口 127.0.0.1:9000（控制面）               │
-│ 隧道出口 127.0.0.1:9020（agent）                │
-└───────────────────────┬────────────────────────┘
-        SSH 反向隧道（本地主动发起，仅回环）
-┌───────────────────────┴────────────────────────┐
-│ 隧道 · 控制面 · agent 运行时                    │
-│ 编排（supervisor/watchdog）· 长任务流水线        │
-│ 状态文件 · 单实例守卫                           │
-└─────────────────────────────────────────────────┘
+.
+├── enroll_service.py        注册服务（绑定 127.0.0.1，建议 systemd 常驻 + nginx /enroll 反代）
+├── enroll.py                凭证管理 CLI（签发 / 列表 / 校验 / 注销）
+├── enroll_client.py         目标机侧：用凭证兑换令牌
+├── agent_adapters.py        运行时适配层（把任意 agent 归一为 run_task）
+├── agent_bridge.py          任务桥（--task 执行；--self-test 输出能力卡片）
+├── agent_action.py          统一动作服务（POST /agent，兼容 /task /run /reasonix）
+├── agent_probe.py           云端探测/学习：动作发现 + 能力探测 + 延迟基准 → 每机画像
+├── agentsdb.py              会话与文件台账（SQLite 单库）
+├── rmt.py                   多机统一 CLI（list / status / tail / run / probe / profile）
+├── push_remote_file.py      确定性投送脚本到远端并执行
+├── runtime.example.json     运行时配置模板
+├── docs/                    01 对接协议 · 02 架构 · 03 活性看门狗 · 04 Skill
+│                            05 运行时适配与画像 · 06 新代理接入 · 07 凭证注册接入
+├── ops/                     部署/打包/检查脚本
+├── skills/                  可直接加载的 agent skill（含脚本）
+└── tests/                   端到端测试（含反例）
 ```
-
-1. **SSH 反向隧道** —— 传输
-2. **HTTP 控制面** —— 白名单动作（状态/日志/启停）+ `agent` 任意任务
-3. **HTTP agent 运行时** —— 官方接口（可换成任意支持 HTTP 的本地 agent）
-
-> 详细的双端程序清单与对接协议见 **[`docs/01-interface-contract.md`](docs/01-interface-contract.md)**
 
 ## 快速开始
 
 ```bash
-# 0) 本地机器：放好令牌文件、部署脚本、给长驻脚本注入单实例守卫
-# 1) 本地机器：用 CIM/计划任务拉起 supervisor（切勿用会话内子进程）
-# 2) 云端：登记该机器
+# 0) 云端：起注册服务（建议 systemd）+ nginx 反代 /enroll
+python3 enroll_service.py &                 # 见 ops/enable_enroll_nginx.py
 
-# 多机统一 CLI
-python3 rmt.py list                     # 所有机器 + 在线状态
-python3 rmt.py status  machine-a        # 进度 / GPU / 进程 / 日志尾
-python3 rmt.py tail    machine-a pipeline 20
-python3 rmt.py run     machine-a "统计产物数量并输出表格"
-python3 rmt.py start | stop | package   machine-a
+# 1) 云端：签发一次性凭证（自动打印可粘贴给目标机的整段说明）
+python3 enroll.py issue --desc "渲染机" --control-port 9200 --serve-port 9220         --guard-base 19300 --machine-id render-1
 
-# 确定性投送补丁（改远端代码的标准姿势）
-python3 push_remote_file.py machine-a ./patch_x.py scripts/patch_x.py
+# 2) 目标机：兑换令牌（自动写入 scripts/.agent_token）
+python3 enroll_client.py --ticket RGT-XXXXX-XXXXX-XXXXX-XXXXX \
+        --hostname %COMPUTERNAME% --control-port 9200 --serve-port 9220
+
+# 3) 目标机：声明运行时 + 自测能力卡片
+python3 agent_adapters.py --detect            # 扫描本机可用的 agent CLI / API key
+python3 agent_bridge.py --self-test           # 生成能力卡片，交给云端
+
+# 4) 云端：探测学习并写入画像
+python3 agent_probe.py <machine>
+python3 agent_probe.py --show
+
+# 5) 云端：派活（自动按画像选择动作名与超时）
+python3 rmt.py run <machine> "统计产物数量"
+
+# 6) 台账
+python3 agentsdb.py stats
+python3 agentsdb.py sessions --machine <machine>
+python3 agentsdb.py files --machine <machine>
 ```
 
-从零接线（含端口分配、令牌、守卫、验收口径）见
-**[`docs/02-architecture.md`](docs/02-architecture.md)** 的 onboarding 清单。
-
-## 核心可靠性机制
-
-1. **别把"慢"当"死"** —— 判活只认真进度：`run/*-progress.json` 新鲜度 + 动态阈值
-2. **一个组件只准一个实例** —— 端口式单实例守卫；去重判定 = `精确命令行片段 ∪ 守卫端口`
-3. **常驻进程用 CIM/计划任务拉起** —— 会话内子进程会随会话被回收
-4. **杀进程前先保命** —— 保留"正在写入状态的实例"、保护其祖先链（链式自派生的坑）
-5. **编码统一 UTF-8** —— 否则 Windows 子进程输出会静默变空（且只有中文任务失败）
-6. **资源自保** —— swap + `flock` 互斥 + 定时任务错峰，避免小机器雪崩
-
-> 12 条完整清单（每条带**根因与硬证据**）见
-> **[`docs/04-skill.md`](docs/04-skill.md)** · 活性判定实现要点见
-> **[`docs/03-liveness-watchdog.md`](docs/03-liveness-watchdog.md)**
-
-## 目录结构
+## 统一动作契约（目标机侧要实现）
 
 ```
-remote-tunnel-control/
-├── README.md                          本文件
-├── LICENSE
-├── docs/
-│   ├── 01-interface-contract.md       双端程序清单与对接协议（先读这个）
-│   ├── 02-architecture.md             拓扑 · 多机端口规划 · API 参考 · onboarding
-│   ├── 03-liveness-watchdog.md        活性判定与动态阈值实现要点
-│   ├── 04-skill.md                    防崩溃/防误杀/防重复全集（12 条）
-│   └── remote-tunnel-control-suite.zip 资料包（上述文档 + 脚本打包）
-└── skills/
-    └── remote-machine-tunnel-control/ 可安装的 Skill（丢进 ~/.hermes/skills/ 即可用）
-        ├── SKILL.md
-        ├── references/{architecture,interface-contract}.md · machines.example.json
-        └── scripts/{_singleton.py, rmt.py, push_remote_file.py}
+POST /agent      （推荐名；兼容别名 /task、/run）
+{"task": "自然语言任务", "timeout": 180}
+→ {"ok": true, "output": {"rc": 0, "output": "…", "runtime": "Kimi", "adapter": "cli_arg", "secs": 1.2}}
 ```
+`rc=0` 成功 · `127` 命令不存在 · `124` 超时 · `501` 未启用任务通道 · 未知端点回 `404`（云端据此轮询候选动作）
 
-## 适用场景
+## 可靠性设计（踩过的坑都写进文档了）
 
-- **长时任务**：语音转录、视频转码、爬虫、批量渲染、模型训练/推理、跨机同步
-- **NAT 后的机器**：家里/办公室的 GPU 机器、边缘设备、无公网 IP 的服务器
-- **一人多机**：一台云端做主控，多台本地机器跑任务并统一观测
+- **别把慢当死**：活性看真进度（进度文件/段进度），不看"有无新产物"；动态阈值 `max(40, 时长×1.5+10)`
+- **单实例守卫**：每脚本独占绑定回环端口，进程死端口自动释放，无陈锁
+- **完成态识别**：分母用"真实分片数"，别用"文件条目总数"（否则永远差点数 → 误报卡住）
+- **链式派生杀进程雷区**、**CIM 持久拉起**、**小机器雪崩防护** 等 12 条见 `docs/03` 与 `skills/`
 
-## 安全模型（务必阅读）
+## 安全模型
 
-- 本方案把"**本地 agent 的控制权**"交给云端：**云端的访问凭据 ≈ 本地机器的控制权**
-- 生产建议：**密钥认证**（关闭密码登录）、**单独非 root 账号**、**每机独立令牌**、
-  **全量审计**（每次 agent 调用都写日志）、转发端口**永远只绑 `127.0.0.1`**
-- 仓库内的示例已完全脱敏（主机名 / 用户名 / 路径 / IP / 令牌均为占位符）
+- 隧道端口只绑 `127.0.0.1`；不修改 `GatewayPorts`
+- 注册凭证：一次性 + 短 TTL + **绑定预留端口** + 限流 + 全量审计
+- 每台机器**独立令牌**，只落本机文件；台账不索引密钥类文件
+- 建议 SSH 用密钥认证 + 专用非 root 账号
 
-## English Summary
+## English summary
 
-A battle-tested toolkit for controlling machines behind NAT from a cloud host over a
-single SSH reverse tunnel, exposing exactly two HTTP surfaces (a whitelisted control
-plane and an agent runtime). It ships the reusable pieces — a **port-based single-instance
-guard**, a **multi-machine CLI**, and a **deterministic file-push runner** — plus the
-methodology that makes long-running jobs survive unattended operation: **liveness from
-second-level progress heartbeats instead of artifact counts**, **dynamic stall thresholds**,
-**process de-duplication**, and **session-independent process spawning**. Domain-agnostic:
-transcription, scraping, rendering, batch jobs, training, sync — anything long-running
-behind NAT that you need to observe and steer remotely.
+A reverse-tunnel control plane for machines behind NAT: **ticket-based enrollment** (no SSH
+credential exchange), a **runtime-agnostic adapter layer** (Kimi / GLM / Claude / OpenAI / custom
+CLI or HTTP), **automatic capability probing** that learns how to drive each agent and stores a
+per-machine profile, plus a **SQLite ledger** of sessions and transferred files. Tunnel ports bind
+to loopback only; enrollment tickets are single-use, TTL-bound and port-pinned.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT

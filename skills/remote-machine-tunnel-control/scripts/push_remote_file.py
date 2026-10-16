@@ -13,7 +13,7 @@
     python3 push_remote_file.py <机器> <本地文件> [远端相对路径] [--no-run] [--timeout 240]
 
 例：
-    python3 push_remote_file.py machine-a ./_patch2.py scripts/_patch2.py
+    python3 push_remote_file.py jdbjj /root/jdbjj/_patch2.py scripts/_patch2.py
 
 注意：
   * 任务里**必须**写明"原样照抄、完整回传、不要总结"，否则远端 agent 会自己改写/精简
@@ -25,7 +25,7 @@ import os
 import sys
 import urllib.request
 
-REG = "/root/machine-ctl/machines.json"
+REG = "/root/remote-tunnel-control/machines.json"
 
 
 def load_env(path):
@@ -76,6 +76,19 @@ def main(argv):
                                  headers={"X-Token": tok, "Content-Type": "application/json"})
     d = json.loads(urllib.request.urlopen(req, timeout=tmo + 120).read().decode("utf-8", "ignore"))
     o = d.get("output", {})
+    try:                                              # 会话 + 文件入台账（agentsdb）
+        import agentsdb as adb
+        sid = adb.log_session(name, "reasonix_task", title="推送脚本: " + os.path.basename(local),
+                              status="ok" if o.get("rc") == 0 else "failed",
+                              duration_s=o.get("secs"))
+        adb.log_message(sid, "user", task)
+        adb.log_message(sid, "agent", o.get("output") or "", meta={"rc": o.get("rc")})
+        adb.log_file(name, "push-script", cloud_path=remote, local_path=local,
+                     size_bytes=os.path.getsize(local),
+                     sha256=adb.sha256_file(local), status="pushed",
+                     session_id=sid, note="push_remote_file.py")
+    except Exception as e:                            # noqa: BLE001
+        print("(agentsdb 记录失败: %s)" % e)
     print("机器=%s  远端=%s  rc=%s  用时 %ss" % (name, remote, o.get("rc"), o.get("secs")))
     print("=" * 70)
     print(o.get("output") or json.dumps(d, ensure_ascii=False)[:4000])

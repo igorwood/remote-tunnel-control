@@ -19,10 +19,11 @@
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 
-REG = "/root/machine-ctl/machines.json"
+REG = "/root/remote-tunnel-control/machines.json"
 
 
 def load_reg():
@@ -65,11 +66,11 @@ def online(m):
 
 
 def cmd_list(mm):
-    print("%-12s %-7s %-6s %s" % ("机器", "状态", "端口", "说明"))
+    print("%-12s %-7s %-6s %-16s %s" % ("机器", "状态", "端口", "运行时", "说明"))
     for name, m in sorted(mm.items()):
         ok = online(m)
-        print("%-12s %-7s %-6s %s" % (name, "在线" if ok else "离线",
-                                      m.get("control_port"), m.get("desc", "")))
+        print("%-12s %-7s %-6s %-16s %s" % (name, "在线" if ok else "离线",
+              m.get("control_port"), m.get("runtime", "-"), m.get("desc", "")))
     return 0
 
 
@@ -113,11 +114,67 @@ def cmd_action(name, m, action):
 
 
 def cmd_run(name, m, task, tmo):
+    # ① 有画像就按画像派活（动作名 + 建议超时），没有则回退到候选动作
+    prof, action = {}, None
+    try:
+        import agentsdb as adb
+        prof = adb.get_profile(name) or {}
+        action = prof.get("action") or None
+        if prof.get("features", {}).get("suggested_timeout"):
+            # 只往上抬，不往下压：用户显式给的大超时必须保留
+            tmo = max(tmo, int(prof["features"]["suggested_timeout"]))
+        if prof and not prof.get("features", {}).get("task_channel", True):
+            print("✗ 该机画像显示未启用任务通道（%s）" % prof.get("features", {}).get("reason", "n/a"))
+    except Exception:                                     # noqa: BLE001
+        pass
+    candidates = [action] if action else ["agent", "task", "run", "reasonix"]
     body = json.dumps({"task": task, "mode": "print", "timeout": tmo}).encode("utf-8")
-    d = call(m, "reasonix", data=body, tmo=tmo + 120)
+    t0 = time.time()
+    last_err = None
+    d = None
+    for act in candidates:                                # ② 动作名逐个试（兼容不同运行时）
+        try:
+            d = call(m, act, data=body, tmo=tmo + 120)
+            action = act
+            break
+        except urllib.error.HTTPError as e:
+            last_err = e
+            if e.code in (404, 405, 501):                 # 该动作不存在 → 试下一个
+                continue
+            break
+    if d is None and last_err is None:
+        raise RuntimeError("无可用的任务动作")
+    if d is None:
+        e = last_err
+        detail = e.read().decode("utf-8", "ignore")[:300]
+        print("✗ 远端拒绝执行（HTTP %s）：%s" % (e.code, detail or "（无响应体）"))
+        if e.code == 501:
+            print("  → 501 通常表示该机器的 agent 运行时未就绪（本地 serve 没起，或未实现 reasonix 动作）")
+        try:                                          # 失败的会话也要留痕（agentsdb）
+            import agentsdb as adb
+            sid = adb.log_session(name, "agent_task", title=task[:80], status="failed",
+                                 duration_s=round(time.time() - t0, 1),
+                                 summary="HTTP %s" % e.code)
+            adb.log_message(sid, "user", task)
+            adb.log_message(sid, "system", "HTTP %s %s" % (e.code, detail))
+        except Exception:                             # noqa: BLE001
+            pass
+        return 1
     o = d.get("output", {})
+    if action:
+        print("(动作 /%s%s)" % (action, "，按画像" if prof else ""))
     print("rc=%s  用时 %ss" % (o.get("rc"), o.get("secs")))
     print(o.get("output") or json.dumps(d, ensure_ascii=False)[:3000])
+    try:                                              # 会话入台账（agentsdb）
+        import agentsdb as adb
+        sid = adb.log_session(name, "agent_task", title=task[:80],
+                              status="ok" if o.get("rc") == 0 else "failed",
+                              duration_s=o.get("secs") or round(time.time() - t0, 1))
+        adb.log_message(sid, "user", task)
+        adb.log_message(sid, "agent", o.get("output") or "",
+                        meta={"rc": o.get("rc"), "secs": o.get("secs")})
+    except Exception as e:                            # noqa: BLE001
+        print("(agentsdb 记录失败: %s)" % e)
     return 0
 
 
@@ -155,6 +212,14 @@ def main(argv):
             print('用法: rmt.py run <机器> "<任务>" [timeout]')
             return 2
         return cmd_run(name, m, argv[3], int(argv[4]) if len(argv) > 4 else 180)
+    if op == "probe":
+        import agent_probe
+        agent_probe.probe(name)
+        return 0
+    if op == "profile":
+        import agent_probe
+        agent_probe.show(name)
+        return 0
     print("未知操作 %r（见 --help 的用法）" % op)
     return 2
 

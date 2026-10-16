@@ -1,18 +1,19 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""单实例守卫：同一脚本只允许一个实例存活（端口式，自愈、无陈锁）。
+"""单实例守卫：同一脚本只允许一个实例存活。
+
+原理：每个长驻脚本启动时独占绑定一个固定的本地回环端口（127.0.0.1:191xx）：
+  - 绑定成功 → 没有别的实例，继续运行；
+  - 绑定失败 → 已有实例在跑，本进程立刻退出。
+进程退出时操作系统自动释放端口，所以**不会留下过期锁**，比锁文件更自愈。
 
 用法（放在脚本末尾 `if __name__ == "__main__":` 之前）：
-
     try:
         import _singleton
         if not _singleton.acquire("watchdog_transcribe", 19102):
             raise SystemExit(0)
     except ImportError:
         pass
-
-约定：端口按机器编号分段（见 references/architecture.md §4）
-      MACHINE-A = 19100+，MACHINE-B = 19200+，MACHINE-C = 19300+
 """
 import socket
 import sys

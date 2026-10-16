@@ -1,0 +1,44 @@
+{
+  "default": "kimi",
+  "_comment": "把下面的命令/参数换成你这台机器上真实的 agent 调用方式；type 可选 cli_arg / cli_stdin / cli_template / openai_http / http_json",
+  "kimi": {
+    "type": "cli_arg",
+    "cmd": [
+      "kimi",
+      "--prompt"
+    ],
+    "label": "Kimi"
+  },
+  "claude": {
+    "type": "cli_arg",
+    "cmd": [
+      "claude",
+      "-p"
+    ],
+    "label": "Claude Code"
+  },
+  "glm": {
+    "type": "cli_stdin",
+    "cmd": [
+      "glm",
+      "chat"
+    ],
+    "label": "智谱 GLM"
+  },
+  "openai_compat": {
+    "type": "openai_http",
+    "base_url": "https://api.openai.com/v1",
+    "model": "gpt-4o-mini",
+    "api_key_env": "OPENAI_API_KEY",
+    "label": "OpenAI 兼容 HTTP"
+  },
+  "http_generic": {
+    "type": "http_json",
+    "url": "http://127.0.0.1:8000/chat",
+    "body_tpl": {
+      "prompt": "{task}"
+    },
+    "resp_path": "reply",
+    "label": "自研 HTTP 接口"
+  }
+}
